@@ -12,7 +12,13 @@ pub trait Market {
         tick: TimeDelta,
     ) -> impl Future<Output = Result<Option<(DateTime<Utc>, Event)>, RoundingError>> + Send;
 
+    fn time(&self) -> DateTime<Utc>;
+
     fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Option<f64>;
+
+    fn current_price(&self, symbol: &str) -> Option<f64> {
+        self.price_at(symbol, self.time())
+    }
 
     fn buy_at_market(&self, symbol: &str, quantity: u32);
     fn sell_at_market(&self, symbol: &str, quantity: u32);
