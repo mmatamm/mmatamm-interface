@@ -52,6 +52,9 @@ pub struct TestMarket {
     price_histories: HashMap<String, Vec<Range<f64>>>,
     price_history_start: DateTime<Utc>,
     price_history_interval: TimeDelta,
+
+    cash: f64,
+    holdings: HashMap<String, u32>,
 }
 
 impl Market for TestMarket {
@@ -132,12 +135,50 @@ impl Market for TestMarket {
         )
     }
 
-    fn buy_at_market(&self, symbol: &str, quantity: u32) {
-        todo!()
+    fn buy_at_market(&mut self, symbol: &str, quantity: u32) {
+        let price_per_share = self.current_price(symbol).unwrap();
+        let total_price = price_per_share * quantity as f64;
+
+        if total_price > self.cash {
+            panic!(
+                "Not enough cash: tried to buy {} shares of {} at {} with {} in cash",
+                quantity, symbol, price_per_share, self.cash
+            );
+        }
+
+        self.cash -= total_price;
+
+        let cool = self.holdings.get_mut(symbol);
+
+        if let Some(v) = cool {
+            *v += quantity;
+        } else {
+            self.holdings.insert(symbol.to_string(), quantity);
+        }
     }
 
-    fn sell_at_market(&self, symbol: &str, quantity: u32) {
-        todo!()
+    fn sell_at_market(&mut self, symbol: &str, quantity: u32) {
+        if &quantity > self.holdings.get(symbol).unwrap() {
+            panic!(
+                "Not enough shares: tried to sell {} shares of {} whilst holding {} shares",
+                quantity,
+                symbol,
+                self.holdings.get(symbol).unwrap()
+            );
+        }
+
+        let price_per_share = self.current_price(symbol).unwrap();
+        let total_price = price_per_share * quantity as f64;
+
+        self.cash += total_price;
+
+        let cool = self.holdings.get_mut(symbol);
+
+        if let Some(v) = cool {
+            *v -= quantity;
+        } else {
+            unreachable!()
+        }
     }
 
     fn in_regular_hours(&self) -> bool {
@@ -183,6 +224,9 @@ async fn test_ticks() {
         price_histories: HashMap::new(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     assert!(market.next_event().await.is_none());
@@ -225,6 +269,9 @@ async fn test_market_hours() {
         price_histories: HashMap::new(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     assert_event(
@@ -268,6 +315,9 @@ async fn test_invalid_market_hours() {
         price_histories: HashMap::new(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     let _ = market.next_event_or_tick(TimeDelta::minutes(1)).await;
@@ -290,6 +340,9 @@ async fn test_prices() {
         price_histories: [("STOCK".to_string(), vec![10.0..11.0, 12.0..13.0])].into(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     let (mut time, _) = market
@@ -322,6 +375,9 @@ async fn test_consistant_prices() {
         price_histories: [("STOCK".to_string(), vec![10.0..10.0])].into(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     let _ = market
@@ -371,6 +427,9 @@ async fn test_future_prices() {
         price_histories: [("STOCK".to_string(), vec![10.0..11.0, 12.0..13.0])].into(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
     };
 
     let _ = market
@@ -380,4 +439,102 @@ async fn test_future_prices() {
         .unwrap();
 
     let _ = market.price_at("STOCK", Utc.with_ymd_and_hms(1970, 1, 1, 0, 1, 0).unwrap());
+}
+
+#[tokio::test]
+async fn test_buy_and_sell() {
+    let mut market = TestMarket {
+        events: VecDeque::new(),
+        time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        market_time: MarketTime::Regular,
+
+        price_histories: [("STOCK".to_string(), vec![1.0..1.0, 2.0..2.0])].into(),
+        price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        price_history_interval: TimeDelta::minutes(1),
+
+        cash: 100.0,
+        holdings: HashMap::new(),
+    };
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    market.buy_at_market("STOCK", 100);
+
+    assert_float_eq!(0.0, market.cash, ulps <= 5);
+    assert_eq!(100, *market.holdings.get("STOCK").unwrap());
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    market.sell_at_market("STOCK", 100);
+
+    assert_float_eq!(200.0, market.cash, ulps <= 5);
+}
+
+#[tokio::test]
+#[should_panic]
+async fn test_buy_more_than_cash() {
+    let mut market = TestMarket {
+        events: VecDeque::new(),
+        time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        market_time: MarketTime::Regular,
+
+        price_histories: [("STOCK".to_string(), vec![1.0..1.0, 2.0..2.0])].into(),
+        price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        price_history_interval: TimeDelta::minutes(1),
+
+        cash: 100.0,
+        holdings: HashMap::new(),
+    };
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    market.buy_at_market("STOCK", 101);
+}
+
+#[tokio::test]
+#[should_panic]
+async fn test_sell_more_than_holdings() {
+    let mut market = TestMarket {
+        events: VecDeque::new(),
+        time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        market_time: MarketTime::Regular,
+
+        price_histories: [("STOCK".to_string(), vec![1.0..1.0, 2.0..2.0])].into(),
+        price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        price_history_interval: TimeDelta::minutes(1),
+
+        cash: 100.0,
+        holdings: HashMap::new(),
+    };
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    market.buy_at_market("STOCK", 100);
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    market.sell_at_market("STOCK", 101);
 }

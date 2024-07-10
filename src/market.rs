@@ -20,8 +20,8 @@ pub trait Market {
         self.price_at(symbol, self.time())
     }
 
-    fn buy_at_market(&self, symbol: &str, quantity: u32);
-    fn sell_at_market(&self, symbol: &str, quantity: u32);
+    fn buy_at_market(&mut self, symbol: &str, quantity: u32);
+    fn sell_at_market(&mut self, symbol: &str, quantity: u32);
 
     fn in_regular_hours(&self) -> bool;
     fn in_pre_market_hours(&self) -> bool;
