@@ -5,7 +5,8 @@ use std::{
 };
 
 use chrono::{DateTime, DurationRound, RoundingError, TimeDelta, TimeZone, Utc};
-use rand::Rng as _;
+use float_eq::{assert_float_eq, float_eq};
+use rand::{distributions::uniform::SampleRange, Rng};
 use tokio;
 
 use crate::{Event, Market};
@@ -120,8 +121,15 @@ impl Market for TestMarket {
         // NOTE in the actual implementation, consider returning the latest
         // price instead of `None`
         let current_tick = price_history.get(tick_index as usize)?;
-        let mut rng = rand::thread_rng();
-        Some(rng.gen_range(current_tick.clone()))
+
+        Some(
+            if float_eq!(current_tick.start, current_tick.end, ulps <= 5) {
+                current_tick.start
+            } else {
+                let mut rng = rand::thread_rng();
+                rng.gen_range(current_tick.clone())
+            },
+        )
     }
 
     fn buy_at_market(&self, symbol: &str, quantity: u32) {
@@ -301,6 +309,54 @@ async fn test_prices() {
 
     assert_in_range(12.0, 13.0, market.price_at("STOCK", time).unwrap());
     assert_in_range(12.0, 13.0, market.current_price("STOCK").unwrap());
+}
+
+#[tokio::test]
+async fn test_consistant_prices() {
+    let mut market = TestMarket {
+        events: VecDeque::new(),
+        time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        market_time: MarketTime::Regular,
+
+        price_histories: [("STOCK".to_string(), vec![10.0..10.0])].into(),
+        price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        price_history_interval: TimeDelta::minutes(1),
+    };
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    assert_float_eq!(10.0, market.current_price("STOCK").unwrap(), ulps <= 5);
+}
+
+#[tokio::test]
+#[should_panic]
+async fn test_inverted_lows_and_highs() {
+    let mut market = TestMarket {
+        events: VecDeque::new(),
+        time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        market_time: MarketTime::Regular,
+
+        price_histories: [("STOCK".to_string(), vec![11.0..10.0])].into(),
+        price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
+        price_history_interval: TimeDelta::minutes(1),
+
+        cash: 0.0,
+        holdings: HashMap::new(),
+    };
+
+    let _ = market
+        .next_event_or_tick(TimeDelta::minutes(1))
+        .await
+        .unwrap()
+        .unwrap();
+
+    let _ = market.current_price("STOCK").unwrap();
 }
 
 #[tokio::test]
