@@ -1,15 +1,12 @@
 #![feature(async_iterator)]
 
 mod algorithm;
-mod event;
-mod market;
+pub mod market;
 
 #[cfg(test)]
 mod tests;
 
 pub use algorithm::Algorithm;
-pub use event::Event;
-pub use market::Market;
 
 pub fn add(left: u64, right: u64) -> u64 {
     left + right

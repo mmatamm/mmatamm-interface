@@ -6,42 +6,10 @@ use std::{
 
 use chrono::{DateTime, DurationRound, RoundingError, TimeDelta, TimeZone, Utc};
 use float_eq::{assert_float_eq, float_eq};
-use rand::{distributions::uniform::SampleRange, Rng};
+use rand::Rng;
 use tokio;
 
-use crate::{Event, Market};
-
-#[derive(PartialEq)]
-enum MarketTime {
-    NotTrading,
-    PreMarket,
-    Regular,
-    PostMarket,
-}
-
-impl MarketTime {
-    fn update(&mut self, event: &Event) {
-        match event {
-            Event::PreMarketStart => {
-                assert!(self == &MarketTime::NotTrading);
-                *self = MarketTime::PreMarket;
-            }
-            Event::RegularMarketStart => {
-                assert!(self == &MarketTime::PreMarket);
-                *self = MarketTime::Regular;
-            }
-            Event::RegularMarketEnd => {
-                assert!(self == &MarketTime::Regular);
-                *self = MarketTime::PostMarket;
-            }
-            Event::PostMarketEnd => {
-                assert!(self == &MarketTime::PostMarket);
-                *self = MarketTime::NotTrading;
-            }
-            _ => {}
-        }
-    }
-}
+use crate::market::{Event, Market, MarketTime};
 
 pub struct TestMarket {
     events: VecDeque<(DateTime<Utc>, Event)>,
@@ -181,16 +149,8 @@ impl Market for TestMarket {
         }
     }
 
-    fn in_regular_hours(&self) -> bool {
-        self.market_time == MarketTime::Regular
-    }
-
-    fn in_pre_market_hours(&self) -> bool {
-        self.market_time == MarketTime::PreMarket
-    }
-
-    fn in_post_market_hours(&self) -> bool {
-        self.market_time == MarketTime::PostMarket
+    fn market_time(&self) -> MarketTime {
+        self.market_time
     }
 }
 
@@ -280,7 +240,7 @@ async fn test_market_hours() {
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
 
-    assert!(market.in_regular_hours());
+    assert_eq!(MarketTime::Regular, market.market_time);
 
     assert_event(
         Event::RegularMarketEnd,
@@ -288,9 +248,7 @@ async fn test_market_hours() {
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
 
-    assert!(!market.in_regular_hours());
-    assert!(market.in_post_market_hours());
-    assert!(market.in_extended_hours());
+    assert_eq!(MarketTime::PostMarket, market.market_time);
 
     assert_event(
         Event::Tick,
