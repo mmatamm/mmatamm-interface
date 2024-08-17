@@ -1,9 +1,10 @@
 use std::future::Future;
 
 use chrono::{DateTime, RoundingError, TimeDelta, Utc};
+use thiserror::Error;
 
 // TODO Add `SellCompleted` and `PurchaseCompleted` events
-#[derive(Debug, PartialEq)]
+#[derive(Clone, Debug, PartialEq)]
 pub enum Event {
     Tick,
     PreMarketStart,
@@ -20,27 +21,45 @@ pub enum MarketTime {
     PostMarket,
 }
 
-// TODO Use errors instead of panics
+#[derive(Error, Debug)]
+pub enum ImpossibleEvent {
+    #[error("{event:?} reported during {market_time:?} market time")]
+    MarketTimeSkip {
+        event: Event,
+        market_time: MarketTime,
+    },
+}
+
+macro_rules! update_market_time {
+    ($self:ident, $event:ident, $current_state:expr, $next_state:expr) => {
+        if $self != &$current_state {
+            Err(ImpossibleEvent::MarketTimeSkip {
+                event: $event.clone(),
+                market_time: $self.clone(),
+            })
+        } else {
+            *$self = $next_state;
+            Ok(())
+        }
+    };
+}
+
 impl MarketTime {
-    pub fn update(&mut self, event: &Event) {
+    pub fn update(&mut self, event: &Event) -> Result<(), ImpossibleEvent> {
         match event {
             Event::PreMarketStart => {
-                assert!(self == &MarketTime::NotTrading);
-                *self = MarketTime::PreMarket;
+                update_market_time!(self, event, MarketTime::NotTrading, MarketTime::PreMarket)
             }
             Event::RegularMarketStart => {
-                assert!(self == &MarketTime::PreMarket);
-                *self = MarketTime::Regular;
+                update_market_time!(self, event, MarketTime::PreMarket, MarketTime::Regular)
             }
             Event::RegularMarketEnd => {
-                assert!(self == &MarketTime::Regular);
-                *self = MarketTime::PostMarket;
+                update_market_time!(self, event, MarketTime::Regular, MarketTime::PostMarket)
             }
             Event::PostMarketEnd => {
-                assert!(self == &MarketTime::PostMarket);
-                *self = MarketTime::NotTrading;
+                update_market_time!(self, event, MarketTime::PostMarket, MarketTime::NotTrading)
             }
-            _ => {}
+            _ => Ok(()),
         }
     }
 
@@ -48,6 +67,8 @@ impl MarketTime {
 }
 
 pub trait Market {
+    type Error;
+
     fn next_event(&mut self) -> impl Future<Output = Option<(DateTime<Utc>, Event)>> + Send;
 
     fn next_event_or_tick(
@@ -57,14 +78,21 @@ pub trait Market {
 
     fn time(&self) -> DateTime<Utc>;
 
-    fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Option<f64>;
+    fn price_at(
+        &self,
+        symbol: &str,
+        time: DateTime<Utc>,
+    ) -> impl Future<Output = Result<Option<f64>, Self::Error>>;
 
-    fn current_price(&self, symbol: &str) -> Option<f64> {
+    fn current_price(
+        &self,
+        symbol: &str,
+    ) -> impl Future<Output = Result<Option<f64>, Self::Error>> {
         self.price_at(symbol, self.time())
     }
 
-    fn buy_at_market(&mut self, symbol: &str, quantity: u32);
-    fn sell_at_market(&mut self, symbol: &str, quantity: u32);
+    fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> impl Future<Output = ()>;
+    fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> impl Future<Output = ()>;
 
     fn market_time(&self) -> MarketTime;
 }

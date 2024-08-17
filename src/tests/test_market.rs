@@ -26,11 +26,13 @@ pub struct TestMarket {
 }
 
 impl Market for TestMarket {
+    type Error = ();
+
     async fn next_event(&mut self) -> Option<(DateTime<Utc>, Event)> {
         let event = self.events.pop_front();
 
         if let Some((time, ref event_type)) = event {
-            self.market_time.update(event_type);
+            self.market_time.update(event_type).unwrap();
             self.next_time = time;
             self.time = time;
         }
@@ -48,7 +50,7 @@ impl Market for TestMarket {
         if self.next_time == current_tick {
             if let Some((event_time, event)) = self.events.front() {
                 if event_time == &self.next_time {
-                    self.market_time.update(event);
+                    self.market_time.update(event).unwrap();
                     self.time = *event_time;
                     return Ok(self.events.pop_front());
                 }
@@ -61,7 +63,7 @@ impl Market for TestMarket {
 
         if let Some((event_time, event)) = self.events.front() {
             if event_time <= &next_tick {
-                self.market_time.update(event);
+                self.market_time.update(event).unwrap();
                 self.next_time = *event_time;
                 self.time = *event_time;
                 return Ok(self.events.pop_front());
@@ -77,7 +79,7 @@ impl Market for TestMarket {
         self.time
     }
 
-    fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Option<f64> {
+    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<Option<f64>, ()> {
         if time > self.time {
             panic!("tried to access a price from the future without the DeLorian")
         }
@@ -91,20 +93,21 @@ impl Market for TestMarket {
 
         // NOTE in the actual implementation, consider returning the latest
         // price instead of `None`
-        let current_tick = price_history.get(tick_index as usize)?;
-
-        Some(
-            if float_eq!(current_tick.start, current_tick.end, ulps <= 5) {
-                current_tick.start
-            } else {
-                let mut rng = rand::thread_rng();
-                rng.gen_range(current_tick.clone())
-            },
-        )
+        Ok(match price_history.get(tick_index as usize) {
+            Some(current_tick) => Some(
+                if float_eq!(current_tick.start, current_tick.end, ulps <= 5) {
+                    current_tick.start
+                } else {
+                    let mut rng = rand::thread_rng();
+                    rng.gen_range(current_tick.clone())
+                },
+            ),
+            None => None,
+        })
     }
 
-    fn buy_at_market(&mut self, symbol: &str, quantity: u32) {
-        let price_per_share = self.current_price(symbol).unwrap();
+    async fn buy_at_market(&mut self, symbol: &str, quantity: u32) {
+        let price_per_share = self.current_price(symbol).await.unwrap().unwrap();
         let total_price = price_per_share * quantity as f64;
 
         if total_price > self.cash {
@@ -125,7 +128,7 @@ impl Market for TestMarket {
         }
     }
 
-    fn sell_at_market(&mut self, symbol: &str, quantity: u32) {
+    async fn sell_at_market(&mut self, symbol: &str, quantity: u32) {
         if &quantity > self.holdings.get(symbol).unwrap() {
             panic!(
                 "Not enough shares: tried to sell {} shares of {} whilst holding {} shares",
@@ -135,7 +138,7 @@ impl Market for TestMarket {
             );
         }
 
-        let price_per_share = self.current_price(symbol).unwrap();
+        let price_per_share = self.current_price(symbol).await.unwrap().unwrap();
         let total_price = price_per_share * quantity as f64;
 
         self.cash += total_price;
@@ -309,8 +312,16 @@ async fn test_prices() {
         .unwrap()
         .unwrap();
 
-    assert_in_range(10.0, 11.0, market.price_at("STOCK", time).unwrap());
-    assert_in_range(10.0, 11.0, market.current_price("STOCK").unwrap());
+    assert_in_range(
+        10.0,
+        11.0,
+        market.price_at("STOCK", time).await.unwrap().unwrap(),
+    );
+    assert_in_range(
+        10.0,
+        11.0,
+        market.current_price("STOCK").await.unwrap().unwrap(),
+    );
 
     (time, _) = market
         .next_event_or_tick(TimeDelta::minutes(1))
@@ -318,8 +329,16 @@ async fn test_prices() {
         .unwrap()
         .unwrap();
 
-    assert_in_range(12.0, 13.0, market.price_at("STOCK", time).unwrap());
-    assert_in_range(12.0, 13.0, market.current_price("STOCK").unwrap());
+    assert_in_range(
+        12.0,
+        13.0,
+        market.price_at("STOCK", time).await.unwrap().unwrap(),
+    );
+    assert_in_range(
+        12.0,
+        13.0,
+        market.current_price("STOCK").await.unwrap().unwrap(),
+    );
 }
 
 #[tokio::test]
@@ -344,7 +363,11 @@ async fn test_consistant_prices() {
         .unwrap()
         .unwrap();
 
-    assert_float_eq!(10.0, market.current_price("STOCK").unwrap(), ulps <= 5);
+    assert_float_eq!(
+        10.0,
+        market.current_price("STOCK").await.unwrap().unwrap(),
+        ulps <= 5
+    );
 }
 
 #[tokio::test]
@@ -370,7 +393,7 @@ async fn test_inverted_lows_and_highs() {
         .unwrap()
         .unwrap();
 
-    let _ = market.current_price("STOCK").unwrap();
+    let _ = market.current_price("STOCK").await.unwrap();
 }
 
 #[tokio::test]
@@ -396,7 +419,9 @@ async fn test_future_prices() {
         .unwrap()
         .unwrap();
 
-    let _ = market.price_at("STOCK", Utc.with_ymd_and_hms(1970, 1, 1, 0, 1, 0).unwrap());
+    let _ = market
+        .price_at("STOCK", Utc.with_ymd_and_hms(1970, 1, 1, 0, 1, 0).unwrap())
+        .await;
 }
 
 #[tokio::test]
@@ -421,7 +446,7 @@ async fn test_buy_and_sell() {
         .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 100);
+    market.buy_at_market("STOCK", 100).await;
 
     assert_float_eq!(0.0, market.cash, ulps <= 5);
     assert_eq!(100, *market.holdings.get("STOCK").unwrap());
@@ -432,7 +457,7 @@ async fn test_buy_and_sell() {
         .unwrap()
         .unwrap();
 
-    market.sell_at_market("STOCK", 100);
+    market.sell_at_market("STOCK", 100).await;
 
     assert_float_eq!(200.0, market.cash, ulps <= 5);
 }
@@ -460,7 +485,7 @@ async fn test_buy_more_than_cash() {
         .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 101);
+    market.buy_at_market("STOCK", 101).await;
 }
 
 #[tokio::test]
@@ -486,7 +511,7 @@ async fn test_sell_more_than_holdings() {
         .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 100);
+    market.buy_at_market("STOCK", 100).await;
 
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
@@ -494,5 +519,5 @@ async fn test_sell_more_than_holdings() {
         .unwrap()
         .unwrap();
 
-    market.sell_at_market("STOCK", 101);
+    market.sell_at_market("STOCK", 101).await;
 }
