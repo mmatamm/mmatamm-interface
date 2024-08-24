@@ -19,6 +19,7 @@ pub enum MarketTime {
     PreMarket,
     Regular,
     PostMarket,
+    Unknown,
 }
 
 #[derive(Error, Debug)]
@@ -32,14 +33,14 @@ pub enum ImpossibleEvent {
 
 macro_rules! update_market_time {
     ($self:ident, $event:ident, $current_state:expr, $next_state:expr) => {
-        if $self != &$current_state {
+        if $self == &$current_state || $self == &MarketTime::Unknown {
+            *$self = $next_state;
+            Ok(())
+        } else {
             Err(ImpossibleEvent::MarketTimeSkip {
                 event: $event.clone(),
                 market_time: $self.clone(),
             })
-        } else {
-            *$self = $next_state;
-            Ok(())
         }
     };
 }
