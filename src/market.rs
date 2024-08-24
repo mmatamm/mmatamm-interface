@@ -69,12 +69,14 @@ impl MarketTime {
 pub trait Market {
     type Error;
 
-    fn next_event(&mut self) -> impl Future<Output = Option<(DateTime<Utc>, Event)>> + Send;
+    fn next_event(
+        &mut self,
+    ) -> impl Future<Output = Result<Option<(DateTime<Utc>, Event)>, Self::Error>> + Send;
 
     fn next_event_or_tick(
         &mut self,
         tick: TimeDelta,
-    ) -> impl Future<Output = Result<Option<(DateTime<Utc>, Event)>, RoundingError>> + Send;
+    ) -> impl Future<Output = Result<(DateTime<Utc>, Event), Self::Error>> + Send;
 
     fn time(&self) -> DateTime<Utc>;
 
@@ -91,8 +93,16 @@ pub trait Market {
         self.price_at(symbol, self.time())
     }
 
-    fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> impl Future<Output = ()>;
-    fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> impl Future<Output = ()>;
+    fn buy_at_market(
+        &mut self,
+        symbol: &str,
+        quantity: u32,
+    ) -> impl Future<Output = Result<(), Self::Error>>;
+    fn sell_at_market(
+        &mut self,
+        symbol: &str,
+        quantity: u32,
+    ) -> impl Future<Output = Result<(), Self::Error>>;
 
     fn market_time(&self) -> MarketTime;
 }

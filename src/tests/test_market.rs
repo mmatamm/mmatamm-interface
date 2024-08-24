@@ -28,7 +28,7 @@ pub struct TestMarket {
 impl Market for TestMarket {
     type Error = ();
 
-    async fn next_event(&mut self) -> Option<(DateTime<Utc>, Event)> {
+    async fn next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, ()> {
         let event = self.events.pop_front();
 
         if let Some((time, ref event_type)) = event {
@@ -37,14 +37,14 @@ impl Market for TestMarket {
             self.time = time;
         }
 
-        event
+        Ok(event)
     }
 
     async fn next_event_or_tick(
         &mut self,
         tick: chrono::TimeDelta,
-    ) -> Result<Option<(DateTime<Utc>, Event)>, RoundingError> {
-        let current_tick = self.next_time.duration_trunc(tick)?;
+    ) -> Result<(DateTime<Utc>, Event), ()> {
+        let current_tick = self.next_time.duration_trunc(tick).unwrap();
         let next_tick = current_tick + tick;
 
         if self.next_time == current_tick {
@@ -52,13 +52,13 @@ impl Market for TestMarket {
                 if event_time == &self.next_time {
                     self.market_time.update(event).unwrap();
                     self.time = *event_time;
-                    return Ok(self.events.pop_front());
+                    return Ok(self.events.pop_front().unwrap());
                 }
             }
 
             self.next_time = next_tick;
             self.time = current_tick;
-            return Ok(Some((current_tick, Event::Tick)));
+            return Ok((current_tick, Event::Tick));
         }
 
         if let Some((event_time, event)) = self.events.front() {
@@ -66,13 +66,13 @@ impl Market for TestMarket {
                 self.market_time.update(event).unwrap();
                 self.next_time = *event_time;
                 self.time = *event_time;
-                return Ok(self.events.pop_front());
+                return Ok(self.events.pop_front().unwrap());
             }
         }
 
         self.next_time = next_tick;
         self.time = next_tick;
-        Ok(Some((next_tick, Event::Tick)))
+        Ok((next_tick, Event::Tick))
     }
 
     fn time(&self) -> DateTime<Utc> {
@@ -106,7 +106,9 @@ impl Market for TestMarket {
         })
     }
 
-    async fn buy_at_market(&mut self, symbol: &str, quantity: u32) {
+    async fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), ()> {
+        // TODO Avoid trading when the markets are closed
+
         let price_per_share = self.current_price(symbol).await.unwrap().unwrap();
         let total_price = price_per_share * quantity as f64;
 
@@ -126,9 +128,11 @@ impl Market for TestMarket {
         } else {
             self.holdings.insert(symbol.to_string(), quantity);
         }
+
+        Ok(())
     }
 
-    async fn sell_at_market(&mut self, symbol: &str, quantity: u32) {
+    async fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), ()> {
         if &quantity > self.holdings.get(symbol).unwrap() {
             panic!(
                 "Not enough shares: tried to sell {} shares of {} whilst holding {} shares",
@@ -150,6 +154,8 @@ impl Market for TestMarket {
         } else {
             unreachable!()
         }
+
+        Ok(())
     }
 
     fn market_time(&self) -> MarketTime {
@@ -162,14 +168,10 @@ impl Market for TestMarket {
 fn assert_event<E>(
     expected_event: Event,
     expected_time: DateTime<Utc>,
-    actual_event: Result<Option<(DateTime<Utc>, Event)>, E>,
+    actual_event: Result<(DateTime<Utc>, Event), E>,
 ) {
-    assert!(actual_event.is_ok_and(|o| {
-        o.is_some_and(|e| {
-            let (time, event) = e;
-            time == expected_time && event == expected_event
-        })
-    }));
+    assert!(actual_event
+        .is_ok_and(|(time, event)| { time == expected_time && event == expected_event }));
 }
 
 fn assert_in_range<N: PartialOrd>(minimum: N, maximum: N, actual: N) {
@@ -192,7 +194,7 @@ async fn test_ticks() {
         holdings: HashMap::new(),
     };
 
-    assert!(market.next_event().await.is_none());
+    assert!(market.next_event().await.unwrap().is_none());
 
     assert_event(
         Event::Tick,
@@ -271,7 +273,7 @@ async fn test_invalid_market_hours() {
         .into(),
         time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         next_time: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
-        market_time: MarketTime::Regular,
+        market_time: MarketTime::PreMarket,
 
         price_histories: HashMap::new(),
         price_history_start: Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
@@ -281,7 +283,7 @@ async fn test_invalid_market_hours() {
         holdings: HashMap::new(),
     };
 
-    let _ = market.next_event_or_tick(TimeDelta::minutes(1)).await;
+    market.next_event().await.unwrap();
 
     assert_event(
         Event::PostMarketEnd,
@@ -309,7 +311,6 @@ async fn test_prices() {
     let (mut time, _) = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
     assert_in_range(
@@ -326,7 +327,6 @@ async fn test_prices() {
     (time, _) = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
     assert_in_range(
@@ -360,7 +360,6 @@ async fn test_consistant_prices() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
     assert_float_eq!(
@@ -390,7 +389,6 @@ async fn test_inverted_lows_and_highs() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
     let _ = market.current_price("STOCK").await.unwrap();
@@ -416,7 +414,6 @@ async fn test_future_prices() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
     let _ = market
@@ -443,10 +440,9 @@ async fn test_buy_and_sell() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 100).await;
+    market.buy_at_market("STOCK", 100).await.unwrap();
 
     assert_float_eq!(0.0, market.cash, ulps <= 5);
     assert_eq!(100, *market.holdings.get("STOCK").unwrap());
@@ -454,10 +450,9 @@ async fn test_buy_and_sell() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
-    market.sell_at_market("STOCK", 100).await;
+    market.sell_at_market("STOCK", 100).await.unwrap();
 
     assert_float_eq!(200.0, market.cash, ulps <= 5);
 }
@@ -482,10 +477,9 @@ async fn test_buy_more_than_cash() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 101).await;
+    market.buy_at_market("STOCK", 101).await.unwrap();
 }
 
 #[tokio::test]
@@ -508,16 +502,14 @@ async fn test_sell_more_than_holdings() {
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
-    market.buy_at_market("STOCK", 100).await;
+    market.buy_at_market("STOCK", 100).await.unwrap();
 
     let _ = market
         .next_event_or_tick(TimeDelta::minutes(1))
         .await
-        .unwrap()
         .unwrap();
 
-    market.sell_at_market("STOCK", 101).await;
+    market.sell_at_market("STOCK", 101).await.unwrap();
 }
