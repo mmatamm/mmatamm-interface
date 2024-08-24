@@ -64,6 +64,20 @@ impl MarketTime {
         }
     }
 
+    /// Determines if the market is currently open.
+    ///
+    /// This function checks if the current market time is either Pre-Market, Regular, or Post-Market.
+    ///
+    /// # Returns
+    ///
+    /// * `true` if the market is open (Pre-Market, Regular, or Post-Market)
+    /// * `false` if the market is closed (any other state)
+    pub fn is_open(&self) -> bool {
+        self == &MarketTime::PreMarket
+            || self == &MarketTime::Regular
+            || self == &MarketTime::PostMarket
+    }
+
     // TODO Consider implementing `is_trading`, `is_regular_market` and `is_extended_market`
 }
 
