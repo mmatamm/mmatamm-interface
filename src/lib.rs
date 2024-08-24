@@ -2,6 +2,7 @@
 
 mod algorithm;
 pub mod market;
+pub mod questdb_market;
 
 #[cfg(test)]
 mod tests;
