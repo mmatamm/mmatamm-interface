@@ -1,6 +1,7 @@
 use std::future::Future;
 
 use chrono::{DateTime, TimeDelta, Utc};
+use futures::future::try_join_all;
 use thiserror::Error;
 
 // TODO Add `SellCompleted` and `PurchaseCompleted` events
@@ -77,8 +78,8 @@ impl MarketTime {
     }
 }
 
-pub trait Market {
-    type Error;
+pub trait Market: Sync {
+    type Error: Send;
 
     fn next_event(
         &mut self,
@@ -95,9 +96,9 @@ pub trait Market {
         &self,
         symbol: &str,
         time: DateTime<Utc>,
-    ) -> impl Future<Output = Result<f64, Self::Error>>;
+    ) -> impl Future<Output = Result<f64, Self::Error>> + Send;
 
-    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f64, Self::Error>> {
+    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f64, Self::Error>> + Send {
         self.price_at(symbol, self.time())
     }
 
@@ -116,5 +117,20 @@ pub trait Market {
 
     fn cash(&self) -> f64;
 
-    fn shares(&self, symbol: &str) -> u32;
+    fn shares_of(&self, symbol: &str) -> u32;
+
+    fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)>;
+
+    fn net_worth(&self) -> impl std::future::Future<Output = Result<f64, Self::Error>> + Send {
+        async {
+            let individual_holding_worth =
+                try_join_all(self.holdings().into_iter().map(|(symbol, quantity)| async {
+                    Ok(self.current_price(symbol).await? * (*quantity as f64))
+                }))
+                .await?;
+            let gross_holdings_worth: f64 = individual_holding_worth.iter().sum();
+
+            Ok(gross_holdings_worth + self.cash())
+        }
+    }
 }

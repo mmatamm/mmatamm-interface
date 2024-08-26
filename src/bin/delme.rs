@@ -99,7 +99,7 @@ impl Algorithm for CrossMovingAverageStrategy {
                 } else if !self.last_sold {
                     // sell
                     // TODO add a market extender function for this
-                    let quantity = market.shares(&self.symbol);
+                    let quantity = market.shares_of(&self.symbol);
                     market.sell_at_market(&self.symbol, quantity).await?;
                     println!("selling {} shares", quantity);
 
@@ -112,7 +112,8 @@ impl Algorithm for CrossMovingAverageStrategy {
         println!(
             "net worth: {}",
             market.cash()
-                + (market.shares(&self.symbol) as f64) * market.current_price(&self.symbol).await?
+                + (market.shares_of(&self.symbol) as f64)
+                    * market.current_price(&self.symbol).await?
         );
         // println!("{:?}", market.time());
 

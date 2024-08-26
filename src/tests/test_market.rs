@@ -162,12 +162,16 @@ impl Market for TestMarket {
         self.cash
     }
 
-    fn shares(&self, symbol: &str) -> u32 {
+    fn shares_of(&self, symbol: &str) -> u32 {
         if let Some(q) = self.holdings.get(symbol) {
             *q
         } else {
             0
         }
+    }
+
+    fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)> {
+        &self.holdings
     }
 }
 

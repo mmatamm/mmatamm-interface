@@ -7,6 +7,7 @@ edition = "2021"
 chrono = "0.4.38"
 flexi_logger = "0.28.5"
 float_eq = "1.0.1"
+futures = "0.3.30"
 rand = "0.8.5"
 thiserror = "1.0.61"
 tokio = { version = "1.38.0", optional = false, features = ["full", "macros", "rt"] }
