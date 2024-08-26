@@ -1,12 +1,9 @@
 use std::collections::{HashMap, LinkedList};
 
-use chrono::{DateTime, DurationRound as _, NaiveDateTime, TimeZone, Utc};
+use chrono::{DateTime, DurationRound as _, NaiveDateTime, Utc};
 use thiserror::Error;
 use tokio::try_join;
-use tokio_postgres::{
-    types::{FromSql, Timestamp, Type},
-    Statement,
-};
+use tokio_postgres::Statement;
 
 use crate::market::{Event, ImpossibleEvent, Market, MarketTime};
 
@@ -317,6 +314,7 @@ impl<'a> Market for QuestDbMarket<'a> {
     fn market_time(&self) -> crate::market::MarketTime {
         self.market_time
     }
+
     fn cash(&self) -> f64 {
         self.cash
     }

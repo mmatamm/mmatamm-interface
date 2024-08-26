@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use chrono::{DateTime, RoundingError, TimeDelta, Utc};
+use chrono::{DateTime, TimeDelta, Utc};
 use thiserror::Error;
 
 // TODO Add `SellCompleted` and `PurchaseCompleted` events
@@ -66,8 +66,6 @@ impl MarketTime {
 
     /// Determines if the market is currently open.
     ///
-    /// This function checks if the current market time is either Pre-Market, Regular, or Post-Market.
-    ///
     /// # Returns
     ///
     /// * `true` if the market is open (Pre-Market, Regular, or Post-Market)
@@ -77,8 +75,6 @@ impl MarketTime {
             || self == &MarketTime::Regular
             || self == &MarketTime::PostMarket
     }
-
-    // TODO Consider implementing `is_trading`, `is_regular_market` and `is_extended_market`
 }
 
 pub trait Market {
