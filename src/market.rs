@@ -117,4 +117,8 @@ pub trait Market {
     ) -> impl Future<Output = Result<(), Self::Error>>;
 
     fn market_time(&self) -> MarketTime;
+
+    fn cash(&self) -> f64;
+
+    fn shares(&self, symbol: &str) -> u32;
 }

@@ -317,4 +317,15 @@ impl<'a> Market for QuestDbMarket<'a> {
     fn market_time(&self) -> crate::market::MarketTime {
         self.market_time
     }
+    fn cash(&self) -> f64 {
+        self.cash
+    }
+
+    fn shares(&self, symbol: &str) -> u32 {
+        if let Some(q) = self.holdings.get(symbol) {
+            *q
+        } else {
+            0
+        }
+    }
 }

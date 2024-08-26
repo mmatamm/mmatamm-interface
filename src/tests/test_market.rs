@@ -157,6 +157,18 @@ impl Market for TestMarket {
     fn market_time(&self) -> MarketTime {
         self.market_time
     }
+
+    fn cash(&self) -> f64 {
+        self.cash
+    }
+
+    fn shares(&self, symbol: &str) -> u32 {
+        if let Some(q) = self.holdings.get(symbol) {
+            *q
+        } else {
+            0
+        }
+    }
 }
 
 // TODO write a test for irregular ticks
