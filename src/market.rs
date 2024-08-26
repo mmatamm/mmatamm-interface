@@ -99,12 +99,9 @@ pub trait Market {
         &self,
         symbol: &str,
         time: DateTime<Utc>,
-    ) -> impl Future<Output = Result<Option<f64>, Self::Error>>;
+    ) -> impl Future<Output = Result<f64, Self::Error>>;
 
-    fn current_price(
-        &self,
-        symbol: &str,
-    ) -> impl Future<Output = Result<Option<f64>, Self::Error>> {
+    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f64, Self::Error>> {
         self.price_at(symbol, self.time())
     }
 

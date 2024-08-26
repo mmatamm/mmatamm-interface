@@ -203,7 +203,7 @@ impl<'a> Market for QuestDbMarket<'a> {
         self.time
     }
 
-    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<Option<f64>, Error> {
+    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f64, Error> {
         // TODO Remember the random value for a stock and deviate from it using
         // geometric Brownian motion (or some estimation of it). Assume the
         // price is in the middle of the bid/ask spread
@@ -221,14 +221,15 @@ impl<'a> Market for QuestDbMarket<'a> {
 
         let row = self
             .db_client
-            .query_one(
+            .query_opt(
                 &self.price_query_statement,
                 &[&(time.timestamp_micros() as f64), &symbol, &1f64],
             )
-            .await?;
+            .await?
+            .ok_or(Error::UnknownPrice(symbol.to_string()))?;
 
         // Return the last close price
-        Ok(Some(row.get(4)))
+        Ok(row.get(4))
     }
 
     async fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Error> {
@@ -239,10 +240,7 @@ impl<'a> Market for QuestDbMarket<'a> {
 
         // Calculate the transaction's cost
         // TODO include fees, bid and ask too
-        let price_per_share = self
-            .current_price(symbol)
-            .await?
-            .ok_or(Error::UnknownPrice(symbol.to_string()))?;
+        let price_per_share = self.current_price(symbol).await?;
         let total_price = price_per_share * quantity as f64;
 
         // Ensure the cash is sufficient for it
@@ -279,10 +277,7 @@ impl<'a> Market for QuestDbMarket<'a> {
 
         // Calculate the transaction's cost
         // TODO include fees, bid and ask too
-        let price_per_share = self
-            .current_price(symbol)
-            .await?
-            .ok_or(Error::UnknownPrice(symbol.to_string()))?;
+        let price_per_share = self.current_price(symbol).await?;
         let total_price = price_per_share * quantity as f64;
 
         // Ensure there are enough shares of this stock
