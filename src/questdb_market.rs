@@ -235,6 +235,10 @@ impl<'a> Market for QuestDbMarket<'a> {
             return Err(Error::UntimelyTrade(symbol.to_string(), self.time));
         }
 
+        if quantity == 0 {
+            return Ok(());
+        }
+
         // Calculate the transaction's cost
         // TODO include fees, bid and ask too
         let price_per_share = self.current_price(symbol).await?;
@@ -270,6 +274,10 @@ impl<'a> Market for QuestDbMarket<'a> {
         // Ensure the market is open
         if !self.market_time.is_open() {
             return Err(Error::UntimelyTrade(symbol.to_string(), self.time));
+        }
+
+        if quantity == 0 {
+            return Ok(());
         }
 
         // Calculate the transaction's cost
