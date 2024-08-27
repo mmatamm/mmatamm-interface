@@ -88,17 +88,17 @@ impl Market for TestMarket {
             .price_histories
             .get(symbol)
             .expect("symbol does not exist");
-        let tick_index = (time - self.price_history_start).num_nanoseconds().unwrap()
+        let candle_index = (time - self.price_history_start).num_nanoseconds().unwrap()
             / self.price_history_interval.num_nanoseconds().unwrap();
 
         // NOTE in the actual implementation, consider returning the latest
         // price instead of `None`
-        let current_tick = price_history.get(tick_index as usize).ok_or(())?;
-        if float_eq!(current_tick.start, current_tick.end, ulps <= 5) {
-            Ok(current_tick.start)
+        let current_candle = price_history.get(candle_index as usize).ok_or(())?;
+        if float_eq!(current_candle.start, current_candle.end, ulps <= 5) {
+            Ok(current_candle.start)
         } else {
             let mut rng = rand::thread_rng();
-            Ok(rng.gen_range(current_tick.clone()))
+            Ok(rng.gen_range(current_candle.clone()))
         }
     }
 

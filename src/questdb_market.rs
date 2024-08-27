@@ -85,7 +85,7 @@ impl<'a> QuestDbMarket<'a> {
     ) -> Result<Self, Error> {
         let (price_query_statement, system_event_query_statement) = try_join!(
             database.prepare(
-                "SELECT * FROM ticks WHERE timestamp <= $1::TIMESTAMP AND symbol = $2::TEXT ORDER BY timestamp DESC LIMIT $3::INT;",
+                "SELECT * FROM prices WHERE timestamp <= $1::TIMESTAMP AND symbol = $2::TEXT ORDER BY timestamp DESC LIMIT $3::INT;",
             ),
             database.prepare(
                 "SELECT * FROM system_events WHERE timestamp > $1::TIMESTAMP ORDER BY timestamp ASC LIMIT 1;"
