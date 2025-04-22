@@ -1,8 +1,10 @@
+mod hdf5_fetcher;
 mod questdb_fetcher;
 
 use std::{error::Error as StdError, fmt::Display, future::Future};
 
 use chrono::{DateTime, NaiveDateTime, Utc};
+pub use hdf5_fetcher::HDF5Fetcher;
 pub use questdb_fetcher::QuestDbFetcher;
 
 use crate::market::SystemEvent;
