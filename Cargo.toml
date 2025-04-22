@@ -18,3 +18,8 @@ tokio-postgres = { version = "0.7.11", features = ["with-chrono-0_4"] }
 
 # [features]
 # tests = ["dep:tokio"]
+
+
+# For profining with perf:
+# [profile.release]
+# debug = true
