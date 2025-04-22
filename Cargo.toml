@@ -4,18 +4,18 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ahash = "0.8.11"
-chrono = "0.4.38"
-dashmap = "6.1.0"
-flexi_logger = "0.28.5"
-float_eq = "1.0.1"
-futures = "0.3.30"
-hdf5 = { package="hdf5-metno", version = "0.10.1", features = ["blosc-lz4", "static"] }
-ndarray = "0.16.1"
-rand = "0.8.5"
-thiserror = "1.0.61"
-tokio = { version = "1.38.0", features = ["full", "macros", "rt"] }
-tokio-postgres = { version = "0.7.11", features = ["with-chrono-0_4"] }
+ahash = "0.8"
+chrono = "0.4"
+dashmap = "6.1"
+flexi_logger = "0.30"
+float_eq = "1.0"
+futures = "0.3"
+hdf5 = { package="hdf5-metno", version = "0.10", features = ["blosc-lz4", "static"] }
+ndarray = "0.16"
+rand = "0.9"
+thiserror = "2.0"
+tokio = { version = "1.44", features = ["full", "macros", "rt"] }
+tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
 
 # [features]
 # tests = ["dep:tokio"]
