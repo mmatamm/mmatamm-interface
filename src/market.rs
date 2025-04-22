@@ -1,17 +1,22 @@
-use std::future::Future;
+use std::{error::Error as StdError, future::Future};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use futures::future::try_join_all;
 use thiserror::Error;
 
-// TODO Add `SellCompleted` and `PurchaseCompleted` events
 #[derive(Clone, Debug, PartialEq)]
-pub enum Event {
-    Tick,
+pub enum SystemEvent {
     PreMarketStart,
     RegularMarketStart,
     RegularMarketEnd,
     PostMarketEnd,
+}
+
+// TODO Add `SellCompleted` and `PurchaseCompleted` events
+#[derive(Clone, Debug, PartialEq)]
+pub enum Event {
+    Tick,
+    SystemEvent(SystemEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -27,7 +32,7 @@ pub enum MarketTime {
 pub enum ImpossibleEvent {
     #[error("{event:?} reported during {market_time:?} market time")]
     MarketTimeSkip {
-        event: Event,
+        event: SystemEvent,
         market_time: MarketTime,
     },
 }
@@ -47,21 +52,20 @@ macro_rules! update_market_time {
 }
 
 impl MarketTime {
-    pub fn update(&mut self, event: &Event) -> Result<(), ImpossibleEvent> {
+    pub fn update(&mut self, event: &SystemEvent) -> Result<(), ImpossibleEvent> {
         match event {
-            Event::PreMarketStart => {
+            SystemEvent::PreMarketStart => {
                 update_market_time!(self, event, MarketTime::NotTrading, MarketTime::PreMarket)
             }
-            Event::RegularMarketStart => {
+            SystemEvent::RegularMarketStart => {
                 update_market_time!(self, event, MarketTime::PreMarket, MarketTime::Regular)
             }
-            Event::RegularMarketEnd => {
+            SystemEvent::RegularMarketEnd => {
                 update_market_time!(self, event, MarketTime::Regular, MarketTime::PostMarket)
             }
-            Event::PostMarketEnd => {
+            SystemEvent::PostMarketEnd => {
                 update_market_time!(self, event, MarketTime::PostMarket, MarketTime::NotTrading)
             }
-            _ => Ok(()),
         }
     }
 
@@ -79,7 +83,7 @@ impl MarketTime {
 }
 
 pub trait Market: Sync {
-    type Error: Send;
+    type Error: StdError + Send;
 
     fn next_event(
         &mut self,

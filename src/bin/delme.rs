@@ -1,13 +1,12 @@
-// use mmatamm_interface::influxdb_market::InfluxDbMarket;
-
 use std::{collections::VecDeque, error::Error};
 
 use chrono::{DateTime, TimeDelta, Utc};
 use mmatamm_interface::{
-    market::{Event, Market, MarketTime},
-    questdb_market::QuestDbMarket,
+    backtesting_market::{fetcher::QuestDbFetcher, BacktestingMarket},
+    market::{Event, Market, MarketTime, SystemEvent},
     Algorithm,
 };
+use tokio::sync::RwLock;
 use tokio_postgres::NoTls;
 
 struct CrossMovingAverageStrategy {
@@ -54,10 +53,13 @@ impl Algorithm for CrossMovingAverageStrategy {
 
     async fn run<M: Market>(&mut self, market: &mut M) -> Result<(), M::Error> {
         // Wait for the market to initialy open
-        assert_eq!(
-            market.next_event().await?.expect("No events").1,
-            Event::RegularMarketStart
-        );
+        loop {
+            let ev = market.next_event().await?.expect("No events").1;
+            if ev == Event::SystemEvent(SystemEvent::RegularMarketStart) {
+                break;
+            }
+        }
+        // assert_eq!(Event::SystemEvent(SystemEvent::RegularMarketStart));
 
         for _ in 0..3000 {
             let (_, event) = market.next_event_or_tick(self.timestep_duration).await?;
@@ -123,7 +125,10 @@ impl Algorithm for CrossMovingAverageStrategy {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn Error>> {
-    flexi_logger::init();
+    flexi_logger::Logger::try_with_env()
+        .unwrap()
+        .start()
+        .unwrap();
 
     // Connect to the database
     let (client, connection) = tokio_postgres::connect(
@@ -140,13 +145,14 @@ async fn main() -> Result<(), Box<dyn Error>> {
         }
     });
 
-    let mut market = QuestDbMarket::new(
-        &client,
+    let fetcher = RwLock::new(QuestDbFetcher::new(client).await?);
+
+    let mut market = BacktestingMarket::new(
+        &fetcher,
         "2024-06-25T13:00:00Z".parse::<DateTime<Utc>>()?,
         10_000.0,
     )
     .await?;
-
     let mut myalgo = CrossMovingAverageStrategy::new("PLTR", TimeDelta::minutes(5), 5, 10);
     myalgo.run(&mut market).await?;
 

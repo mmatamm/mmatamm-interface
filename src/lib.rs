@@ -1,17 +1,16 @@
 #![feature(async_iterator)]
+#![feature(sync_unsafe_cell)]
+#![feature(let_chains)]
+#![feature(btree_cursors)]
 
 mod algorithm;
+pub mod backtesting_market;
 pub mod market;
-pub mod questdb_market;
 
 #[cfg(test)]
 mod tests;
 
 pub use algorithm::Algorithm;
-
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
-}
 
 // #[cfg(test)]
 // mod tests {

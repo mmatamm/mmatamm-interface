@@ -1,15 +1,20 @@
-use std::collections::{HashMap, LinkedList};
+pub mod fetcher;
 
-use chrono::{DateTime, DurationRound as _, NaiveDateTime, Utc};
+use std::collections::{HashMap, LinkedList};
+use std::error::Error as StdError;
+use std::fmt::Display;
+
+use chrono::DurationRound as _;
+use chrono::{DateTime, Utc};
+use fetcher::Fetcher;
 use thiserror::Error;
-use tokio::try_join;
-use tokio_postgres::Statement;
+use tokio::sync::RwLock;
 
 use crate::market::{Event, ImpossibleEvent, Market, MarketTime};
 
-pub struct QuestDbMarket<'a> {
-    /// A database client
-    db_client: &'a tokio_postgres::Client,
+pub struct BacktestingMarket<'a, F: Fetcher> {
+    // /// A database client TODO better comment needed
+    fetcher: &'a RwLock<F>,
 
     /// The current virtual time
     time: DateTime<Utc>,
@@ -25,75 +30,16 @@ pub struct QuestDbMarket<'a> {
     cash: f64,
     /// How many shares of each equity are owned, by symbol
     holdings: HashMap<String, u32>,
-
-    /// A prepared statement for querying the N most recent trade prices
-    /// of an equity
-    price_query_statement: Statement,
-    /// A prepared statement for qureying the next system event
-    system_event_query_statement: Statement,
 }
 
-#[derive(Error, Debug)]
-pub enum Error {
-    #[error("PostgreSQL error")]
-    DatabaseError(#[from] tokio_postgres::Error),
-
-    #[error("Attempted to trade {0} at {1}, outside of trading hours")]
-    UntimelyTrade(String, DateTime<Utc>),
-
-    #[error("Attempted to trade {0} yet the price is unknown")]
-    UnknownPrice(String),
-
-    #[error("Cannot buy {quantity} shares of {symbol} for {total_price} with {cash} in cash")]
-    InsufficientCash {
-        quantity: u32,
-        symbol: String,
-        total_price: f64,
-        cash: f64,
-    },
-
-    #[error("Cannot sell {quantity} shares of {symbol} because only {owned} shares are owned")]
-    InsufficientShares {
-        quantity: u32,
-        symbol: String,
-        owned: u32,
-    },
-
-    #[error(
-        "Symbol '{symbol}' found in database, which is not of the expected kind, {expected_kind}"
-    )]
-    UnexpectedDatabaseSymbol {
-        symbol: String,
-        expected_kind: String,
-    },
-
-    #[error("Impossible event, internal logic fault")]
-    ImpossibleEvent(#[from] ImpossibleEvent),
-
-    #[error("Tried to query data from {future_time} at {current_time}")]
-    FutureQuery {
-        future_time: DateTime<Utc>,
-        current_time: DateTime<Utc>,
-    },
-}
-
-impl<'a> QuestDbMarket<'a> {
+impl<'a, F: Fetcher> BacktestingMarket<'a, F> {
     pub async fn new(
-        database: &'a tokio_postgres::Client,
+        fetcher: &'a RwLock<F>,
         start: DateTime<Utc>,
         cash: f64,
-    ) -> Result<Self, Error> {
-        let (price_query_statement, system_event_query_statement) = try_join!(
-            database.prepare(
-                "SELECT * FROM prices WHERE timestamp <= $1::TIMESTAMP AND symbol = $2::TEXT ORDER BY timestamp DESC LIMIT $3::INT;",
-            ),
-            database.prepare(
-                "SELECT * FROM system_events WHERE timestamp > $1::TIMESTAMP ORDER BY timestamp ASC LIMIT 1;"
-            ),
-        )?;
-
-        Ok(QuestDbMarket {
-            db_client: database,
+    ) -> Result<Self, Error<F>> {
+        Ok(BacktestingMarket {
+            fetcher,
 
             time: start,
             market_time: MarketTime::Unknown,
@@ -101,42 +47,21 @@ impl<'a> QuestDbMarket<'a> {
 
             cash,
             holdings: HashMap::new(),
-
-            price_query_statement,
-            system_event_query_statement,
         })
     }
 
-    async fn next_system_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error> {
-        if let Some(next_row) = self
-            .db_client
-            .query_opt(
-                &self.system_event_query_statement,
-                &[&(self.time.timestamp_micros() as f64)],
-            )
-            .await?
-        {
-            let event_type = match next_row.get(0) {
-                "system_hours_start" => Ok(Event::PreMarketStart),
-                "regular_hours_start" => Ok(Event::RegularMarketStart),
-                "regular_hours_end" => Ok(Event::RegularMarketEnd),
-                "system_hours_end" => Ok(Event::PostMarketEnd),
-                symbol => Err(Error::UnexpectedDatabaseSymbol {
-                    symbol: symbol.to_string(),
-                    expected_kind: "system event".to_string(),
-                }),
-            }?;
+    async fn next_system_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error<F>> {
+        let mut fetcher = self.fetcher.write().await;
+        let event = match fetcher.query_system_event(&self.time).await {
+            Ok(it) => it,
+            Err(err) => return Err(FetcherError(err).into()),
+        };
 
-            let timestamp: NaiveDateTime = next_row.get(1);
-            // let timestamp = DateTime::from_sql(Timestamp, next_row.get(1));
-
-            Ok(Some((timestamp.and_utc(), event_type)))
-        } else {
-            Ok(None)
-        }
+        Ok(event
+            .map(|(event_type, timestamp)| (timestamp.and_utc(), Event::SystemEvent(event_type))))
     }
 
-    async fn peek_next_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error> {
+    async fn peek_next_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error<F>> {
         let next_system_event = self.next_system_event().await?;
         let next_internal_event = self.events.front();
 
@@ -155,14 +80,17 @@ impl<'a> QuestDbMarket<'a> {
     }
 }
 
-impl<'a> Market for QuestDbMarket<'a> {
-    type Error = Error;
+impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for BacktestingMarket<'_, F> {
+    type Error = Error<F>;
 
-    async fn next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, Error> {
+    async fn next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, Self::Error> {
         match self.peek_next_event().await? {
             Some((time, event)) => {
                 self.time = time;
-                self.market_time.update(&event)?;
+
+                if let Event::SystemEvent(ref system_event) = event {
+                    self.market_time.update(&system_event)?;
+                }
 
                 // TODO if the event is internal, pop it from the linked list
 
@@ -175,12 +103,15 @@ impl<'a> Market for QuestDbMarket<'a> {
     async fn next_event_or_tick(
         &mut self,
         tick: chrono::TimeDelta,
-    ) -> Result<(DateTime<Utc>, Event), Error> {
+    ) -> Result<(DateTime<Utc>, Event), Self::Error> {
+        // NOTE This duration_trunc takes about 13% of the time of this entire function
         let next_tick = self.time.duration_trunc(tick).unwrap() + tick;
 
         let event = if let Some((time, event)) = self.peek_next_event().await? {
             if time <= next_tick {
-                self.market_time.update(&event)?;
+                if let Event::SystemEvent(ref system_event) = event {
+                    self.market_time.update(&system_event)?;
+                }
 
                 // TODO if the event is internal, pop it from the linked list
                 (time, event)
@@ -200,7 +131,7 @@ impl<'a> Market for QuestDbMarket<'a> {
         self.time
     }
 
-    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f64, Error> {
+    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f64, Self::Error> {
         // TODO Remember the random value for a stock and deviate from it using
         // geometric Brownian motion (or some estimation of it). Assume the
         // price is in the middle of the bid/ask spread
@@ -216,20 +147,16 @@ impl<'a> Market for QuestDbMarket<'a> {
             });
         }
 
-        let row = self
-            .db_client
-            .query_opt(
-                &self.price_query_statement,
-                &[&(time.timestamp_micros() as f64), &symbol, &1f64],
-            )
-            .await?
-            .ok_or(Error::UnknownPrice(symbol.to_string()))?;
-
         // Return the last close price
-        Ok(row.get(4))
+        let query_price = match self.fetcher.write().await.query_price(&time, &symbol).await {
+            Ok(it) => it,
+            Err(err) => return Err(FetcherError(err).into()),
+        };
+
+        Ok(query_price.ok_or(Error::UnknownPrice(symbol.to_string()))?)
     }
 
-    async fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Error> {
+    async fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Self::Error> {
         // Ensure the market is open
         if !self.market_time.is_open() {
             return Err(Error::UntimelyTrade(symbol.to_string(), self.time));
@@ -270,7 +197,7 @@ impl<'a> Market for QuestDbMarket<'a> {
         Ok(())
     }
 
-    async fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Error> {
+    async fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Self::Error> {
         // Ensure the market is open
         if !self.market_time.is_open() {
             return Err(Error::UntimelyTrade(symbol.to_string(), self.time));
@@ -338,4 +265,61 @@ impl<'a> Market for QuestDbMarket<'a> {
     fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)> {
         &self.holdings
     }
+}
+
+/// To avoid conflicting From implementations, contain F::Error in a distinct
+/// type
+#[derive(Debug)]
+pub struct FetcherError<F: Fetcher>(F::Error);
+
+impl<F: Fetcher> Display for FetcherError<F> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        self.0.fmt(f)
+    }
+}
+
+impl<F: Fetcher + std::fmt::Debug> StdError for FetcherError<F> {}
+
+#[derive(Error, Debug)]
+pub enum Error<F: Fetcher> {
+    #[error("Fetching error")]
+    DatabaseError(#[from] FetcherError<F>),
+
+    #[error("Attempted to trade {0} at {1}, outside of trading hours")]
+    UntimelyTrade(String, DateTime<Utc>),
+
+    #[error("Attempted to trade {0} yet the price is unknown")]
+    UnknownPrice(String),
+
+    #[error("Cannot buy {quantity} shares of {symbol} for {total_price} with {cash} in cash")]
+    InsufficientCash {
+        quantity: u32,
+        symbol: String,
+        total_price: f64,
+        cash: f64,
+    },
+
+    #[error("Cannot sell {quantity} shares of {symbol} because only {owned} shares are owned")]
+    InsufficientShares {
+        quantity: u32,
+        symbol: String,
+        owned: u32,
+    },
+
+    #[error(
+        "Symbol '{symbol}' found in database, which is not of the expected kind, {expected_kind}"
+    )]
+    UnexpectedDatabaseSymbol {
+        symbol: String,
+        expected_kind: String,
+    },
+
+    #[error("Impossible event")]
+    ImpossibleEvent(#[from] ImpossibleEvent),
+
+    #[error("Tried to query data from {future_time} at {current_time}")]
+    FutureQuery {
+        future_time: DateTime<Utc>,
+        current_time: DateTime<Utc>,
+    },
 }
