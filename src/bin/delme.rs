@@ -1,6 +1,6 @@
 use std::{collections::VecDeque, error::Error};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use mmatamm_interface::{
     backtesting_market::{fetcher::HDF5Fetcher, BacktestingMarket},
     market::{Event, Market, MarketTime, SystemEvent},
@@ -60,11 +60,20 @@ impl Algorithm for CrossMovingAverageStrategy {
         }
         // assert_eq!(Event::SystemEvent(SystemEvent::RegularMarketStart));
 
+        let mut next_tick = market
+            .time()
+            .duration_trunc(self.timestep_duration)
+            .unwrap()
+            + self.timestep_duration;
+
         for _ in 0..3000 {
-            let (_, event) = market.next_event_or_tick(self.timestep_duration).await?;
-            if event != Event::Tick {
+            let (_, event) = market.next_event_until(next_tick).await?;
+            if event != Event::Deadline {
                 continue;
             }
+
+            next_tick += self.timestep_duration;
+
             if market.market_time() != MarketTime::Regular {
                 continue;
             }
@@ -116,7 +125,6 @@ impl Algorithm for CrossMovingAverageStrategy {
                 + (market.shares_of(&self.symbol) as f64)
                     * market.current_price(&self.symbol).await?
         );
-        // println!("{:?}", market.time());
 
         Ok(())
     }

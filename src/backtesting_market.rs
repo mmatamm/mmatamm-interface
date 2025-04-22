@@ -4,7 +4,6 @@ use std::collections::{HashMap, LinkedList};
 use std::error::Error as StdError;
 use std::fmt::Display;
 
-use chrono::DurationRound as _;
 use chrono::{DateTime, Utc};
 use fetcher::Fetcher;
 use thiserror::Error;
@@ -100,15 +99,16 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         }
     }
 
-    async fn next_event_or_tick(
+    async fn next_event_until(
         &mut self,
-        tick: chrono::TimeDelta,
+        deadline: DateTime<Utc>,
     ) -> Result<(DateTime<Utc>, Event), Self::Error> {
-        // NOTE This duration_trunc takes about 13% of the time of this entire function
-        let next_tick = self.time.duration_trunc(tick).unwrap() + tick;
+        // // NOTE This duration_trunc takes about 13% of the time of this entire
+        // function let next_tick = self.time.duration_trunc(tick).unwrap() +
+        // tick;
 
         let event = if let Some((time, event)) = self.peek_next_event().await? {
-            if time <= next_tick {
+            if time <= deadline {
                 if let Event::SystemEvent(ref system_event) = event {
                     self.market_time.update(&system_event)?;
                 }
@@ -116,10 +116,10 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
                 // TODO if the event is internal, pop it from the linked list
                 (time, event)
             } else {
-                (next_tick, Event::Tick)
+                (deadline, Event::Deadline)
             }
         } else {
-            (next_tick, Event::Tick)
+            (deadline, Event::Deadline)
         };
 
         self.time = event.0;

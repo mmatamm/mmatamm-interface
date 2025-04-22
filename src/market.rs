@@ -1,6 +1,6 @@
 use std::{error::Error as StdError, future::Future};
 
-use chrono::{DateTime, TimeDelta, Utc};
+use chrono::{DateTime, Utc};
 use futures::future::try_join_all;
 use thiserror::Error;
 
@@ -15,7 +15,7 @@ pub enum SystemEvent {
 // TODO Add `SellCompleted` and `PurchaseCompleted` events
 #[derive(Clone, Debug, PartialEq)]
 pub enum Event {
-    Tick,
+    Deadline,
     SystemEvent(SystemEvent),
 }
 
@@ -89,9 +89,9 @@ pub trait Market: Sync {
         &mut self,
     ) -> impl Future<Output = Result<Option<(DateTime<Utc>, Event)>, Self::Error>> + Send;
 
-    fn next_event_or_tick(
+    fn next_event_until(
         &mut self,
-        tick: TimeDelta,
+        deadline: DateTime<Utc>,
     ) -> impl Future<Output = Result<(DateTime<Utc>, Event), Self::Error>> + Send;
 
     fn time(&self) -> DateTime<Utc>;
