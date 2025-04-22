@@ -123,7 +123,7 @@ impl TimestepSeries {
 
         let next_day_index = self
             .days_map
-            .range((Bound::Excluded(&date), Bound::Unbounded))
+            .lower_bound(Bound::Excluded(&date))
             .next()
             .map(|(_, &i)| i)
             .unwrap_or(self.data.nrows());
@@ -173,10 +173,13 @@ impl TimestepSeries {
         match direction {
             QueryDirection::Backward => {
                 // Fallback to last row of previous day
-                if let Some((_, prev_day_index)) = self.days_map.range(..date).next_back() {
+
+                if let Some((_, prev_day_index)) =
+                    self.days_map.upper_bound(Bound::Excluded(&date)).prev()
+                {
                     let next_day_index = self
                         .days_map
-                        .range((Bound::Excluded(&date), Bound::Unbounded))
+                        .lower_bound(Bound::Excluded(&date))
                         .next()
                         .map(|(_, &i)| i)
                         .unwrap_or(self.data.nrows());
@@ -189,17 +192,12 @@ impl TimestepSeries {
             }
             QueryDirection::Forward => {
                 // Fallback to first row of next day
-                if let Some((_, next_day_index)) = self
-                    .days_map
-                    .range((Bound::Excluded(&date), Bound::Unbounded))
-                    .next()
+                if let Some((_, next_day_index)) =
+                    self.days_map.lower_bound(Bound::Excluded(&date)).next()
                 {
                     let next_next_day_index = self
                         .days_map
-                        .range((
-                            Bound::Excluded(&self.index_to_date(*next_day_index)),
-                            Bound::Unbounded,
-                        ))
+                        .lower_bound(Bound::Excluded(&self.index_to_date(*next_day_index)))
                         .next()
                         .map(|(_, &i)| i)
                         .unwrap_or(self.data.nrows());
