@@ -9,7 +9,7 @@ use fetcher::Fetcher;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
-use crate::market::{Event, ImpossibleEvent, Market, MarketTime};
+use crate::market::{Event, ImpossibleEvent, Market, MarketTime, SystemEvent};
 
 pub struct BacktestingMarket<'a, F: Fetcher> {
     // /// A database client TODO better comment needed
@@ -19,8 +19,11 @@ pub struct BacktestingMarket<'a, F: Fetcher> {
     time: DateTime<Utc>,
     /// The current market time (e.g. pre-market, regular hours, etc...)
     market_time: MarketTime,
-    /// All the following events. This does not include system events and ticks.
+    /// All the following events. This does not include system events and
+    /// deadlines.
     events: LinkedList<(DateTime<Utc>, Event)>,
+
+    next_system_event: Option<(DateTime<Utc>, SystemEvent)>,
 
     // TODO seperate `cash` to `available_cash` and `locked_cash` (or some other name). =
     // available_cash will be subtracted from when submitting an order, and added to
@@ -44,35 +47,54 @@ impl<'a, F: Fetcher> BacktestingMarket<'a, F> {
             market_time: MarketTime::Unknown,
             events: LinkedList::new(),
 
+            next_system_event: None,
+
             cash,
             holdings: HashMap::new(),
         })
     }
 
-    async fn next_system_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error<F>> {
+    async fn peek_next_system_event(
+        &mut self,
+    ) -> Result<Option<(DateTime<Utc>, SystemEvent)>, Error<F>> {
+        // println!("I'm here!");
+        // If the next event is cached and it still is the next event, return it
+        if let Some((next_system_event_time, _)) = self.next_system_event {
+            if self.time < next_system_event_time {
+                return Ok(self.next_system_event.clone());
+            }
+        }
+
+        // Else, fetch the next event
         let mut fetcher = self.fetcher.write().await;
         let event = match fetcher.query_system_event(&self.time).await {
             Ok(it) => it,
             Err(err) => return Err(FetcherError(err).into()),
         };
 
-        Ok(event
-            .map(|(event_type, timestamp)| (timestamp.and_utc(), Event::SystemEvent(event_type))))
+        // Cache it
+        self.next_system_event =
+            event.map(|(event_type, timestamp)| (timestamp.and_utc(), event_type));
+
+        // And return it
+        Ok(self.next_system_event.clone())
     }
 
-    async fn peek_next_event(&self) -> Result<Option<(DateTime<Utc>, Event)>, Error<F>> {
-        let next_system_event = self.next_system_event().await?;
+    async fn peek_next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, Error<F>> {
+        let next_system_event = self.peek_next_system_event().await?;
         let next_internal_event = self.events.front();
 
         match (next_system_event, next_internal_event) {
-            (Some(next_sys), Some(next_int)) => {
-                if next_sys.0 >= next_int.0 {
+            (Some((next_sys_time, next_sys_ev)), Some(next_int)) => {
+                if next_sys_time >= next_int.0 {
                     Ok(Some(next_int.clone()))
                 } else {
-                    Ok(Some(next_sys))
+                    Ok(Some((next_sys_time, Event::SystemEvent(next_sys_ev))))
                 }
             }
-            (Some(next_sys), None) => Ok(Some(next_sys)),
+            (Some((next_sys_time, next_sys_ev)), None) => {
+                Ok(Some((next_sys_time, Event::SystemEvent(next_sys_ev))))
+            }
             (None, Some(next_int)) => Ok(Some(next_int.clone())),
             (None, None) => Ok(None),
         }
