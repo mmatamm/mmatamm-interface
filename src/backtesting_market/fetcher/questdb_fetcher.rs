@@ -44,7 +44,7 @@ impl Fetcher for QuestDbFetcher {
         &mut self,
         time: &DateTime<Utc>,
         symbol: &str,
-    ) -> Result<Option<f64>, Error> {
+    ) -> Result<Option<f32>, Error> {
         let row_opt = self
             .db_client
             .query_opt(

@@ -26,7 +26,7 @@ pub struct BacktestingMarket<'a, F: Fetcher> {
     // available_cash will be subtracted from when submitting an order, and added to
     // locked_cash. Upon trade complete, this will be updated.
     /// The amount of cash on hand
-    cash: f64,
+    cash: f32,
     /// How many shares of each equity are owned, by symbol
     holdings: HashMap<String, u32>,
 }
@@ -35,7 +35,7 @@ impl<'a, F: Fetcher> BacktestingMarket<'a, F> {
     pub async fn new(
         fetcher: &'a RwLock<F>,
         start: DateTime<Utc>,
-        cash: f64,
+        cash: f32,
     ) -> Result<Self, Error<F>> {
         Ok(BacktestingMarket {
             fetcher,
@@ -131,7 +131,7 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         self.time
     }
 
-    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f64, Self::Error> {
+    async fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f32, Self::Error> {
         // TODO Remember the random value for a stock and deviate from it using
         // geometric Brownian motion (or some estimation of it). Assume the
         // price is in the middle of the bid/ask spread
@@ -169,7 +169,7 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         // Calculate the transaction's cost
         // TODO include fees, bid and ask too
         let price_per_share = self.current_price(symbol).await?;
-        let total_price = price_per_share * quantity as f64;
+        let total_price = price_per_share * quantity as f32;
 
         // Ensure the cash is sufficient for it
         if total_price > self.cash {
@@ -210,7 +210,7 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         // Calculate the transaction's cost
         // TODO include fees, bid and ask too
         let price_per_share = self.current_price(symbol).await?;
-        let total_price = price_per_share * quantity as f64;
+        let total_price = price_per_share * quantity as f32;
 
         // Ensure there are enough shares of this stock
         let owned_shares_opt = self.holdings.get_mut(symbol);
@@ -250,7 +250,7 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         self.market_time
     }
 
-    fn cash(&self) -> f64 {
+    fn cash(&self) -> f32 {
         self.cash
     }
 
@@ -295,8 +295,8 @@ pub enum Error<F: Fetcher> {
     InsufficientCash {
         quantity: u32,
         symbol: String,
-        total_price: f64,
-        cash: f64,
+        total_price: f32,
+        cash: f32,
     },
 
     #[error("Cannot sell {quantity} shares of {symbol} because only {owned} shares are owned")]

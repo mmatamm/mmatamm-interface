@@ -14,8 +14,8 @@ struct CrossMovingAverageStrategy {
     short_ma_duration: usize,
     long_ma_duration: usize,
 
-    short_ma_samples: VecDeque<f64>,
-    long_ma_samples: VecDeque<f64>,
+    short_ma_samples: VecDeque<f32>,
+    long_ma_samples: VecDeque<f32>,
 
     last_bought: bool,
     last_sold: bool,
@@ -90,10 +90,10 @@ impl Algorithm for CrossMovingAverageStrategy {
             }
 
             if self.long_ma_samples.len() == self.long_ma_duration {
-                let long_ma_sum: f64 = self.long_ma_samples.iter().sum();
-                let short_ma_sum: f64 = self.short_ma_samples.iter().sum();
-                let long_ma = long_ma_sum / self.long_ma_duration as f64;
-                let short_ma = short_ma_sum / self.short_ma_duration as f64;
+                let long_ma_sum: f32 = self.long_ma_samples.iter().sum();
+                let short_ma_sum: f32 = self.short_ma_samples.iter().sum();
+                let long_ma = long_ma_sum / self.long_ma_duration as f32;
+                let short_ma = short_ma_sum / self.short_ma_duration as f32;
 
                 if short_ma > long_ma {
                     if !self.last_bought {

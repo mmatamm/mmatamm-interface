@@ -10,6 +10,7 @@ pub use questdb_fetcher::QuestDbFetcher;
 use crate::market::SystemEvent;
 
 // TODO XXX Return the timestamp of the relevant row
+// TODO The `: Display` shouldn't be here
 
 pub trait Fetcher: Display {
     type Error: StdError + Send;
@@ -18,7 +19,7 @@ pub trait Fetcher: Display {
         &mut self,
         time: &DateTime<Utc>,
         symbol: &str,
-    ) -> impl Future<Output = Result<Option<f64>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Option<f32>, Self::Error>> + Send;
 
     fn query_system_event(
         &mut self,

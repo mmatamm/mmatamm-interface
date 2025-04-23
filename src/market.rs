@@ -100,9 +100,9 @@ pub trait Market: Sync {
         &self,
         symbol: &str,
         time: DateTime<Utc>,
-    ) -> impl Future<Output = Result<f64, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<f32, Self::Error>> + Send;
 
-    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f64, Self::Error>> + Send {
+    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f32, Self::Error>> + Send {
         self.price_at(symbol, self.time())
     }
 
@@ -119,20 +119,20 @@ pub trait Market: Sync {
 
     fn market_time(&self) -> MarketTime;
 
-    fn cash(&self) -> f64;
+    fn cash(&self) -> f32;
 
     fn shares_of(&self, symbol: &str) -> u32;
 
     fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)>;
 
-    fn net_worth(&self) -> impl std::future::Future<Output = Result<f64, Self::Error>> + Send {
+    fn net_worth(&self) -> impl std::future::Future<Output = Result<f32, Self::Error>> + Send {
         async {
             let individual_holding_worth =
                 try_join_all(self.holdings().into_iter().map(|(symbol, quantity)| async {
-                    Ok(self.current_price(symbol).await? * (*quantity as f64))
+                    Ok(self.current_price(symbol).await? * (*quantity as f32))
                 }))
                 .await?;
-            let gross_holdings_worth: f64 = individual_holding_worth.iter().sum();
+            let gross_holdings_worth: f32 = individual_holding_worth.iter().sum();
 
             Ok(gross_holdings_worth + self.cash())
         }
