@@ -2,11 +2,12 @@ use std::{collections::VecDeque, error::Error};
 
 use chrono::{DateTime, DurationRound, TimeDelta, Utc};
 use mmatamm_interface::{
-    backtesting_market::{fetcher::HDF5Fetcher, BacktestingMarket},
+    backtesting_market::{fetcher::QuestDbFetcher, BacktestingMarket, QueryEngine},
     market::{Event, Market, MarketTime, SystemEvent},
     Algorithm,
 };
 use tokio::sync::RwLock;
+use tokio_postgres::NoTls;
 
 struct CrossMovingAverageStrategy {
     symbol: String,
@@ -122,7 +123,7 @@ impl Algorithm for CrossMovingAverageStrategy {
         println!(
             "net worth: {}",
             market.cash()
-                + (market.shares_of(&self.symbol) as f64)
+                + (market.shares_of(&self.symbol) as f32)
                     * market.current_price(&self.symbol).await?
         );
 
@@ -137,12 +138,26 @@ async fn main() -> Result<(), Box<dyn Error>> {
         .start()
         .unwrap();
 
-    let fetcher = RwLock::new(HDF5Fetcher::new(
-        "../mmatamm-fetch/scripts/mmatamm-qdb2hdf5/output.h5",
-    )?);
+    // Connect to the database
+    let (client, connection) = tokio_postgres::connect(
+        "user=admin password=quest host=localhost port=8812 dbname=qdb",
+        NoTls,
+    )
+    .await?;
+
+    // The connection object performs the actual communication with the database,
+    // so spawn it off to run on its own.
+    tokio::spawn(async move {
+        if let Err(e) = connection.await {
+            eprintln!("connection error: {}", e);
+        }
+    });
+
+    let fetcher = QuestDbFetcher::new(client).await?;
+    let query_engine = RwLock::new(QueryEngine::new(fetcher).await?);
 
     let mut market = BacktestingMarket::new(
-        &fetcher,
+        &query_engine,
         "2024-06-25T13:00:00Z".parse::<DateTime<Utc>>()?,
         10_000.0,
     )

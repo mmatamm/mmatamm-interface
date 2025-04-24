@@ -3,7 +3,7 @@ mod questdb_fetcher;
 
 use std::{error::Error as StdError, fmt::Display, future::Future};
 
-use chrono::{DateTime, NaiveDateTime, Utc};
+use super::query_engine::Ohlc;
 pub use hdf5_fetcher::HDF5Fetcher;
 pub use questdb_fetcher::QuestDbFetcher;
 
@@ -15,14 +15,11 @@ use crate::market::SystemEvent;
 pub trait Fetcher: Display {
     type Error: StdError + Send;
 
-    fn query_price(
-        &mut self,
-        time: &DateTime<Utc>,
+    fn fetch_system_events(
+        &self,
+    ) -> impl Future<Output = Result<Vec<(i64, SystemEvent)>, Self::Error>> + Send;
+    fn fetch_ticker_prices(
+        &self,
         symbol: &str,
-    ) -> impl Future<Output = Result<Option<f32>, Self::Error>> + Send;
-
-    fn query_system_event(
-        &mut self,
-        time: &DateTime<Utc>,
-    ) -> impl Future<Output = Result<Option<(SystemEvent, NaiveDateTime)>, Self::Error>> + Send;
+    ) -> impl Future<Output = Result<Vec<(i64, Ohlc)>, Self::Error>> + Send;
 }

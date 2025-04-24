@@ -1,4 +1,5 @@
 pub mod fetcher;
+mod query_engine;
 
 use std::collections::{HashMap, LinkedList};
 use std::error::Error as StdError;
@@ -6,6 +7,7 @@ use std::fmt::Display;
 
 use chrono::{DateTime, Utc};
 use fetcher::Fetcher;
+pub use query_engine::QueryEngine;
 use thiserror::Error;
 use tokio::sync::RwLock;
 
@@ -13,7 +15,7 @@ use crate::market::{Event, ImpossibleEvent, Market, MarketTime, SystemEvent};
 
 pub struct BacktestingMarket<'a, F: Fetcher> {
     // /// A database client TODO better comment needed
-    fetcher: &'a RwLock<F>,
+    query_engine: &'a RwLock<QueryEngine<F>>,
 
     /// The current virtual time
     time: DateTime<Utc>,
@@ -36,12 +38,12 @@ pub struct BacktestingMarket<'a, F: Fetcher> {
 
 impl<'a, F: Fetcher> BacktestingMarket<'a, F> {
     pub async fn new(
-        fetcher: &'a RwLock<F>,
+        query_engine: &'a RwLock<QueryEngine<F>>,
         start: DateTime<Utc>,
         cash: f32,
     ) -> Result<Self, Error<F>> {
         Ok(BacktestingMarket {
-            fetcher,
+            query_engine,
 
             time: start,
             market_time: MarketTime::Unknown,
@@ -66,11 +68,8 @@ impl<'a, F: Fetcher> BacktestingMarket<'a, F> {
         }
 
         // Else, fetch the next event
-        let mut fetcher = self.fetcher.write().await;
-        let event = match fetcher.query_system_event(&self.time).await {
-            Ok(it) => it,
-            Err(err) => return Err(FetcherError(err).into()),
-        };
+        let mut fetcher = self.query_engine.write().await; // PERF This takes 12% of the total runtime!
+        let event = fetcher.query_system_event(&self.time).await;
 
         // Cache it
         self.next_system_event =
@@ -170,7 +169,13 @@ impl<F: Fetcher + Send + Sync + std::fmt::Debug + 'static> Market for Backtestin
         }
 
         // Return the last close price
-        let query_price = match self.fetcher.write().await.query_price(&time, &symbol).await {
+        let query_price = match self
+            .query_engine
+            .write()
+            .await
+            .query_price(&time, &symbol)
+            .await
+        {
             Ok(it) => it,
             Err(err) => return Err(FetcherError(err).into()),
         };
