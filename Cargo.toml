@@ -4,23 +4,9 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-ahash = "0.8"
 chrono = "0.4"
-dashmap = "6.1"
-flexi_logger = "0.30"
 float_eq = "1.0"
 futures = "0.3"
-hdf5 = { package="hdf5-metno", version = "0.10", features = ["blosc-lz4", "static"] }
-ndarray = "0.16"
 rand = "0.9"
 thiserror = "2.0"
 tokio = { version = "1.44", features = ["full", "macros", "rt"] }
-tokio-postgres = { version = "0.7", features = ["with-chrono-0_4"] }
-
-# [features]
-# tests = ["dep:tokio"]
-
-
-# For profining with perf:
-# [profile.release]
-# debug = true
