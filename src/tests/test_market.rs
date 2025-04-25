@@ -1,10 +1,8 @@
 use core::panic;
-use std::{
-    collections::{HashMap, VecDeque},
-    ops::Range,
-};
+use std::{collections::VecDeque, ops::Range};
 
-use chrono::{DateTime, DurationRound, RoundingError, TimeDelta, TimeZone, Utc};
+use ahash::HashMap;
+use chrono::{DateTime, DurationRound, TimeDelta, TimeZone, Utc};
 use float_eq::{assert_float_eq, float_eq};
 use rand::Rng;
 use tokio;
@@ -58,7 +56,7 @@ impl Market for TestMarket {
 
             self.next_time = next_tick;
             self.time = current_tick;
-            return Ok((current_tick, Event::Tick));
+            return Ok((current_tick, Event::Deadline));
         }
 
         if let Some((event_time, event)) = self.events.front() {
@@ -72,7 +70,7 @@ impl Market for TestMarket {
 
         self.next_time = next_tick;
         self.time = next_tick;
-        Ok((next_tick, Event::Tick))
+        Ok((next_tick, Event::Deadline))
     }
 
     fn time(&self) -> DateTime<Utc> {
@@ -209,7 +207,7 @@ async fn test_ticks() {
     assert!(market.next_event().await.unwrap().is_none());
 
     assert_event(
-        Event::Tick,
+        Event::Deadline,
         Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
@@ -220,7 +218,7 @@ async fn test_ticks() {
     );
 
     assert_event(
-        Event::Tick,
+        Event::Deadline,
         Utc.with_ymd_and_hms(1970, 1, 1, 0, 1, 0).unwrap(),
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
@@ -252,7 +250,7 @@ async fn test_market_hours() {
     };
 
     assert_event(
-        Event::Tick,
+        Event::Deadline,
         Utc.with_ymd_and_hms(1970, 1, 1, 0, 0, 0).unwrap(),
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
@@ -268,7 +266,7 @@ async fn test_market_hours() {
     assert_eq!(MarketTime::PostMarket, market.market_time);
 
     assert_event(
-        Event::Tick,
+        Event::Deadline,
         Utc.with_ymd_and_hms(1970, 1, 1, 0, 1, 0).unwrap(),
         market.next_event_or_tick(TimeDelta::minutes(1)).await,
     );
