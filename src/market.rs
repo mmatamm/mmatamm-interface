@@ -1,7 +1,6 @@
-use std::{error::Error as StdError, future::Future};
+use std::error::Error as StdError;
 
 use chrono::{DateTime, Utc};
-use futures::future::try_join_all;
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
@@ -85,37 +84,23 @@ impl MarketTime {
 pub trait Market: Sync {
     type Error: StdError + Send;
 
-    fn next_event(
-        &mut self,
-    ) -> impl Future<Output = Result<Option<(DateTime<Utc>, Event)>, Self::Error>> + Send;
+    fn next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, Self::Error>;
 
     fn next_event_until(
         &mut self,
         deadline: DateTime<Utc>,
-    ) -> impl Future<Output = Result<(DateTime<Utc>, Event), Self::Error>> + Send;
+    ) -> Result<(DateTime<Utc>, Event), Self::Error>;
 
     fn time(&self) -> DateTime<Utc>;
 
-    fn price_at(
-        &self,
-        symbol: &str,
-        time: DateTime<Utc>,
-    ) -> impl Future<Output = Result<f32, Self::Error>> + Send;
+    fn price_at(&self, symbol: &str, time: DateTime<Utc>) -> Result<f32, Self::Error>;
 
-    fn current_price(&self, symbol: &str) -> impl Future<Output = Result<f32, Self::Error>> + Send {
+    fn current_price(&self, symbol: &str) -> Result<f32, Self::Error> {
         self.price_at(symbol, self.time())
     }
 
-    fn buy_at_market(
-        &mut self,
-        symbol: &str,
-        quantity: u32,
-    ) -> impl Future<Output = Result<(), Self::Error>>;
-    fn sell_at_market(
-        &mut self,
-        symbol: &str,
-        quantity: u32,
-    ) -> impl Future<Output = Result<(), Self::Error>>;
+    fn buy_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Self::Error>;
+    fn sell_at_market(&mut self, symbol: &str, quantity: u32) -> Result<(), Self::Error>;
 
     fn market_time(&self) -> MarketTime;
 
@@ -125,16 +110,13 @@ pub trait Market: Sync {
 
     fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)>;
 
-    fn net_worth(&self) -> impl std::future::Future<Output = Result<f32, Self::Error>> + Send {
-        async {
-            let individual_holding_worth =
-                try_join_all(self.holdings().into_iter().map(|(symbol, quantity)| async {
-                    Ok(self.current_price(symbol).await? * (*quantity as f32))
-                }))
-                .await?;
-            let gross_holdings_worth: f32 = individual_holding_worth.iter().sum();
+    fn net_worth(&self) -> Result<f32, Self::Error> {
+        let gross_holdings_worth: f32 = self
+            .holdings()
+            .into_iter()
+            .map(|(symbol, quantity)| Ok(self.current_price(symbol)? * (*quantity as f32)))
+            .try_fold(0.0, |acc: f32, p| Ok(acc + p?))?;
 
-            Ok(gross_holdings_worth + self.cash())
-        }
+        Ok(gross_holdings_worth + self.cash())
     }
 }

@@ -6,7 +6,5 @@ edition = "2021"
 [dependencies]
 chrono = "0.4"
 float_eq = "1.0"
-futures = "0.3"
 rand = "0.9"
 thiserror = "2.0"
-tokio = { version = "1.44", features = ["full", "macros", "rt"] }
