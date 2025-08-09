@@ -1,4 +1,5 @@
 mod algorithm;
+pub mod c_api;
 pub mod market;
 
 #[cfg(test)]

@@ -1,9 +1,8 @@
-use std::error::Error as StdError;
-
 use chrono::{DateTime, Utc};
 use thiserror::Error;
 
 #[derive(Clone, Debug, PartialEq)]
+#[repr(C)]
 pub enum SystemEvent {
     PreMarketStart,
     RegularMarketStart,
@@ -13,12 +12,14 @@ pub enum SystemEvent {
 
 // TODO Add `SellCompleted` and `PurchaseCompleted` events
 #[derive(Clone, Debug, PartialEq)]
+#[repr(C)]
 pub enum Event {
     Deadline,
     SystemEvent(SystemEvent),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
 pub enum MarketTime {
     NotTrading,
     PreMarket,
@@ -82,7 +83,7 @@ impl MarketTime {
 }
 
 pub trait Market: Sync {
-    type Error: StdError + Send;
+    type Error: Into<anyhow::Error>;
 
     fn next_event(&mut self) -> Result<Option<(DateTime<Utc>, Event)>, Self::Error>;
 
@@ -108,7 +109,7 @@ pub trait Market: Sync {
 
     fn shares_of(&self, symbol: &str) -> u32;
 
-    fn holdings(&self) -> impl IntoIterator<Item = (&String, &u32)>;
+    fn holdings(&self) -> Vec<(&String, &u32)>;
 
     fn net_worth(&self) -> Result<f32, Self::Error> {
         let gross_holdings_worth: f32 = self

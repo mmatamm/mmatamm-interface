@@ -4,7 +4,11 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
+anyhow = "1.0.98"
 chrono = "0.4"
 float_eq = "1.0"
 rand = "0.9"
 thiserror = "2.0"
+
+[build-dependencies]
+cbindgen = "0.29.0"
