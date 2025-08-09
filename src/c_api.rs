@@ -5,9 +5,18 @@ use chrono::DateTime;
 
 use crate::market::{Event, Market, MarketTime};
 
-pub struct CApiMarket {
-    market: Box<dyn Market<Error = anyhow::Error>>,
-    error: anyhow::Error,
+pub struct CApiMarket<'a> {
+    market: &'a mut dyn Market<Error = anyhow::Error>,
+    error: Option<anyhow::Error>,
+}
+
+impl<'a> CApiMarket<'a> {
+    pub fn new(market: &'a mut dyn Market<Error = anyhow::Error>) -> Self {
+        Self {
+            market: market,
+            error: None,
+        }
+    }
 }
 
 // TODO Consider using ms instead of seconds
@@ -32,7 +41,7 @@ pub extern "C" fn next_event(
             true
         }
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
@@ -56,7 +65,7 @@ pub extern "C" fn next_event_until(
             true
         }
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
@@ -86,7 +95,7 @@ pub unsafe extern "C" fn price_at(
             true
         }
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
@@ -107,7 +116,7 @@ pub unsafe extern "C" fn current_price(
             true
         }
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
@@ -122,7 +131,7 @@ pub unsafe extern "C" fn buy_at_market(
     let symbol_str = CStr::from_ptr(symbol).to_str().unwrap();
 
     if let Err(err) = market.market.buy_at_market(symbol_str, quantity) {
-        market.error = err;
+        market.error = Some(err);
         false
     } else {
         true
@@ -140,7 +149,7 @@ pub unsafe extern "C" fn sell_at_market(
     match market.market.sell_at_market(symbol_str, quantity) {
         Ok(_) => true,
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
@@ -180,7 +189,7 @@ pub extern "C" fn net_worth(market: &mut CApiMarket, worth: &mut f32) -> bool {
             true
         }
         Err(err) => {
-            market.error = err;
+            market.error = Some(err);
             false
         }
     }
