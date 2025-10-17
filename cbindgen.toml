@@ -9,3 +9,5 @@ documentation_style = "auto"
 
 style = "tag"
 line_length = 80
+
+cpp_compat = true
