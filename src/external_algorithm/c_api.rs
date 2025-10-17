@@ -17,12 +17,19 @@ impl<'a> CApiMarket<'a> {
             error: None,
         }
     }
+
+    pub fn result(self) -> anyhow::Result<()> {
+        match self.error {
+            Some(e) => Err(e),
+            None => Ok(()),
+        }
+    }
 }
 
 // TODO Consider using ms instead of seconds
 
 #[no_mangle]
-pub extern "C" fn next_event(
+pub extern "C" fn mmatamm_next_event(
     market: &mut CApiMarket,
     event: &mut Event,
     time: &mut i64,
@@ -48,7 +55,7 @@ pub extern "C" fn next_event(
 }
 
 #[no_mangle]
-pub extern "C" fn next_event_until(
+pub extern "C" fn mmatamm_next_event_until(
     market: &mut CApiMarket,
     deadline: i64,
     event: &mut Event,
@@ -72,12 +79,12 @@ pub extern "C" fn next_event_until(
 }
 
 #[no_mangle]
-pub extern "C" fn time(market: &mut CApiMarket) -> i64 {
+pub extern "C" fn mmatamm_time(market: &mut CApiMarket) -> i64 {
     market.market.time().timestamp()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn price_at(
+pub unsafe extern "C" fn mmatamm_price_at(
     market: &mut CApiMarket,
     symbol: *const c_char,
     time: i64,
@@ -102,7 +109,7 @@ pub unsafe extern "C" fn price_at(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn current_price(
+pub unsafe extern "C" fn mmatamm_current_price(
     market: &mut CApiMarket,
     symbol: *const c_char,
     price: &mut f32,
@@ -123,7 +130,7 @@ pub unsafe extern "C" fn current_price(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn buy_at_market(
+pub unsafe extern "C" fn mmatamm_buy_at_market(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: u32,
@@ -139,7 +146,7 @@ pub unsafe extern "C" fn buy_at_market(
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn sell_at_market(
+pub unsafe extern "C" fn mmatamm_sell_at_market(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: u32,
@@ -156,17 +163,17 @@ pub unsafe extern "C" fn sell_at_market(
 }
 
 #[no_mangle]
-pub extern "C" fn market_time(market: &mut CApiMarket) -> MarketTime {
+pub extern "C" fn mmatamm_market_time(market: &mut CApiMarket) -> MarketTime {
     market.market.market_time()
 }
 
 #[no_mangle]
-pub extern "C" fn cash(market: &mut CApiMarket) -> f32 {
+pub extern "C" fn mmatamm_cash(market: &mut CApiMarket) -> f32 {
     market.market.cash()
 }
 
 #[no_mangle]
-pub unsafe extern "C" fn shares_of(
+pub unsafe extern "C" fn mmatamm_shares_of(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: &mut u32,
@@ -181,7 +188,7 @@ pub unsafe extern "C" fn shares_of(
 // TODO Write interface to `holdings` (holdings_count and get_holding(i))
 
 #[no_mangle]
-pub extern "C" fn net_worth(market: &mut CApiMarket, worth: &mut f32) -> bool {
+pub extern "C" fn mmatamm_net_worth(market: &mut CApiMarket, worth: &mut f32) -> bool {
     match market.market.net_worth() {
         Ok(w) => {
             *worth = w;
