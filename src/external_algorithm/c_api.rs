@@ -28,8 +28,7 @@ impl<'a> CApiMarket<'a> {
 
 // TODO Consider using ms instead of seconds
 
-#[no_mangle]
-pub extern "C" fn mmatamm_next_event(
+extern "C" fn mmatamm_next_event(
     market: &mut CApiMarket,
     event: &mut Event,
     time: &mut i64,
@@ -54,8 +53,7 @@ pub extern "C" fn mmatamm_next_event(
     }
 }
 
-#[no_mangle]
-pub extern "C" fn mmatamm_next_event_until(
+extern "C" fn mmatamm_next_event_until(
     market: &mut CApiMarket,
     deadline: i64,
     event: &mut Event,
@@ -78,13 +76,11 @@ pub extern "C" fn mmatamm_next_event_until(
     }
 }
 
-#[no_mangle]
-pub extern "C" fn mmatamm_time(market: &mut CApiMarket) -> i64 {
+extern "C" fn mmatamm_time(market: &mut CApiMarket) -> i64 {
     market.market.time().timestamp()
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn mmatamm_price_at(
+unsafe extern "C" fn mmatamm_price_at(
     market: &mut CApiMarket,
     symbol: *const c_char,
     time: i64,
@@ -108,8 +104,7 @@ pub unsafe extern "C" fn mmatamm_price_at(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn mmatamm_current_price(
+unsafe extern "C" fn mmatamm_current_price(
     market: &mut CApiMarket,
     symbol: *const c_char,
     price: &mut f32,
@@ -129,8 +124,7 @@ pub unsafe extern "C" fn mmatamm_current_price(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn mmatamm_buy_at_market(
+unsafe extern "C" fn mmatamm_buy_at_market(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: u32,
@@ -145,8 +139,7 @@ pub unsafe extern "C" fn mmatamm_buy_at_market(
     }
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn mmatamm_sell_at_market(
+unsafe extern "C" fn mmatamm_sell_at_market(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: u32,
@@ -162,18 +155,15 @@ pub unsafe extern "C" fn mmatamm_sell_at_market(
     }
 }
 
-#[no_mangle]
-pub extern "C" fn mmatamm_market_time(market: &mut CApiMarket) -> MarketTime {
+extern "C" fn mmatamm_market_time(market: &mut CApiMarket) -> MarketTime {
     market.market.market_time()
 }
 
-#[no_mangle]
-pub extern "C" fn mmatamm_cash(market: &mut CApiMarket) -> f32 {
+extern "C" fn mmatamm_cash(market: &mut CApiMarket) -> f32 {
     market.market.cash()
 }
 
-#[no_mangle]
-pub unsafe extern "C" fn mmatamm_shares_of(
+unsafe extern "C" fn mmatamm_shares_of(
     market: &mut CApiMarket,
     symbol: *const c_char,
     quantity: &mut u32,
@@ -187,8 +177,7 @@ pub unsafe extern "C" fn mmatamm_shares_of(
 
 // TODO Write interface to `holdings` (holdings_count and get_holding(i))
 
-#[no_mangle]
-pub extern "C" fn mmatamm_net_worth(market: &mut CApiMarket, worth: &mut f32) -> bool {
+extern "C" fn mmatamm_net_worth(market: &mut CApiMarket, worth: &mut f32) -> bool {
     match market.market.net_worth() {
         Ok(w) => {
             *worth = w;
@@ -201,3 +190,57 @@ pub extern "C" fn mmatamm_net_worth(market: &mut CApiMarket, worth: &mut f32) ->
         }
     }
 }
+
+#[repr(C)]
+pub struct CApiFunctions {
+    pub next_event: extern "C" fn(
+        market: &mut CApiMarket,
+        event: &mut Event,
+        time: &mut i64,
+        event_written: &mut bool,
+    ) -> bool,
+    pub next_event_until: extern "C" fn(
+        market: &mut CApiMarket,
+        deadline: i64,
+        event: &mut Event,
+        time: &mut i64,
+    ) -> bool,
+    pub time: extern "C" fn(market: &mut CApiMarket) -> i64,
+    pub price_at: unsafe extern "C" fn(
+        market: &mut CApiMarket,
+        symbol: *const c_char,
+        time: i64,
+        price: &mut f32,
+    ) -> bool,
+    pub current_price: unsafe extern "C" fn(
+        market: &mut CApiMarket,
+        symbol: *const c_char,
+        price: &mut f32,
+    ) -> bool,
+    pub buy_at_market:
+        unsafe extern "C" fn(market: &mut CApiMarket, symbol: *const c_char, quantity: u32) -> bool,
+    pub sell_at_market:
+        unsafe extern "C" fn(market: &mut CApiMarket, symbol: *const c_char, quantity: u32) -> bool,
+    pub market_time: extern "C" fn(market: &mut CApiMarket) -> MarketTime,
+    pub cash: extern "C" fn(market: &mut CApiMarket) -> f32,
+    pub shares_of: unsafe extern "C" fn(
+        market: &mut CApiMarket,
+        symbol: *const c_char,
+        quantity: &mut u32,
+    ) -> bool,
+    pub net_worth: extern "C" fn(market: &mut CApiMarket, worth: &mut f32) -> bool,
+}
+
+pub(crate) const C_API_FUNCTIONS: CApiFunctions = CApiFunctions {
+    next_event: mmatamm_next_event,
+    next_event_until: mmatamm_next_event_until,
+    time: mmatamm_time,
+    price_at: mmatamm_price_at,
+    current_price: mmatamm_current_price,
+    buy_at_market: mmatamm_buy_at_market,
+    sell_at_market: mmatamm_sell_at_market,
+    market_time: mmatamm_market_time,
+    cash: mmatamm_cash,
+    shares_of: mmatamm_shares_of,
+    net_worth: mmatamm_net_worth,
+};
